@@ -1,23 +1,134 @@
-import os
 import zipfile
 import threading
 import os
+import shutil
 from tkinter import filedialog, messagebox
 
 # 尝试导入7z解压库，如果没有则只支持ZIP
 try:
     import py7zr
     support_7z = True
+    print(f"7z支持状态: {support_7z}")
 except ImportError:
     support_7z = False
-print(f"7z支持状态: {support_7z}")
+    print(f"7z支持状态: {support_7z}")
+
 # 尝试导入rar解压库，如果没有则不支持RAR
 try:
     import rarfile
     support_rar = True
+    print(f"rar支持状态: {support_rar}")
 except ImportError:
     support_rar = False
-print(f"rar支持状态: {support_rar}")
+    print(f"rar支持状态: {support_rar}")
+
+def batch_unzip(source_folder, progress_callback, status_callback, selected_files=None):
+    """批量解压指定目录中的压缩文件"""
+    # 创建success和failed文件夹
+    success_folder = os.path.join(source_folder, "success")
+    failed_folder = os.path.join(source_folder, "failed")
+    os.makedirs(success_folder, exist_ok=True)
+    os.makedirs(failed_folder, exist_ok=True)
+    
+    # 获取源文件夹中的所有文件或选定的文件
+    if selected_files is None:
+        all_files = os.listdir(source_folder)
+    else:
+        all_files = selected_files
+    total_files = len(all_files)
+    processed_files = 0
+    success_count = 0
+    failed_count = 0
+    
+    status_callback(f"找到 {total_files} 个文件待处理")
+    
+    # 遍历所有文件
+    for filename in all_files:
+        file_path = os.path.join(source_folder, filename)
+        
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            status_callback(f"文件不存在: {filename}")
+            processed_files += 1
+            progress = processed_files / total_files * 100
+            progress_callback(progress, f"已处理: {processed_files}/{total_files}")
+            continue
+        
+        # 跳过目录
+        if os.path.isdir(file_path):
+            status_callback(f"跳过目录: {filename}")
+            processed_files += 1
+            progress = processed_files / total_files * 100
+            progress_callback(progress, f"已处理: {processed_files}/{total_files}")
+            continue
+        
+        # 检查文件是否为支持的压缩格式
+        is_supported = False
+        if filename.lower().endswith('.zip'):
+            is_supported = True
+        elif filename.lower().endswith('.7z') and support_7z:
+            is_supported = True
+        elif filename.lower().endswith('.rar') and support_rar:
+            is_supported = True
+        
+        if not is_supported:
+            status_callback(f"不支持的文件格式: {filename}")
+            processed_files += 1
+            progress = processed_files / total_files * 100
+            progress_callback(progress, f"已处理: {processed_files}/{total_files}")
+            continue
+        
+        # 处理压缩文件
+        status_callback(f"开始处理: {filename}")
+        try:
+            # 创建临时解压目录
+            temp_unzip_dir = os.path.join(source_folder, f"temp_{os.path.splitext(filename)[0]}")
+            os.makedirs(temp_unzip_dir, exist_ok=True)
+            
+            # 根据文件类型解压
+            if filename.lower().endswith('.zip'):
+                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    zip_ref.extractall(temp_unzip_dir)
+            elif filename.lower().endswith('.7z') and support_7z:
+                with py7zr.SevenZipFile(file_path, mode='r') as z:
+                    z.extractall(temp_unzip_dir)
+            elif filename.lower().endswith('.rar') and support_rar:
+                with rarfile.RarFile(file_path, 'r') as rar_ref:
+                    rar_ref.extractall(temp_unzip_dir)
+            
+            # 解压成功，将解压结果移动到success文件夹
+            # 创建以压缩文件名命名的目录来存储解压结果
+            success_content_dir = os.path.join(success_folder, os.path.splitext(filename)[0])
+            os.makedirs(success_content_dir, exist_ok=True)
+
+            # 移动临时目录中的所有内容到success_content_dir
+            for item in os.listdir(temp_unzip_dir):
+                s = os.path.join(temp_unzip_dir, item)
+                d = os.path.join(success_content_dir, item)
+                shutil.move(s, d)
+
+            status_callback(f"解压成功: {filename} -> 解压内容已保存到success文件夹")
+            success_count += 1
+        except Exception as e:
+            # 解压失败，移动到failed文件夹
+            failed_file_path = os.path.join(failed_folder, filename)
+            shutil.move(file_path, failed_file_path)
+            status_callback(f"解压失败: {filename} -> 已移动到failed文件夹")
+            status_callback(f"错误信息: {str(e)}")
+            failed_count += 1
+        finally:
+            # 清理临时目录
+            if os.path.exists(temp_unzip_dir):
+                shutil.rmtree(temp_unzip_dir)
+            
+            # 更新进度
+            processed_files += 1
+            progress = processed_files / total_files * 100
+            progress_callback(progress, f"已处理: {processed_files}/{total_files}")
+    
+    # 完成处理
+    status_callback(f"批量解压完成！成功: {success_count}, 失败: {failed_count}")
+    progress_callback(100, "批量解压完成")
 
 def browse_zip_file(zip_path_var, unzip_folder_var):
     """选择压缩文件"""
