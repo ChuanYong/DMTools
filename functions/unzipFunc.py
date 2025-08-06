@@ -1,6 +1,7 @@
 import os
 import zipfile
 import threading
+import os
 from tkinter import filedialog, messagebox
 
 # 尝试导入7z解压库，如果没有则只支持ZIP
@@ -9,6 +10,14 @@ try:
     support_7z = True
 except ImportError:
     support_7z = False
+print(f"7z支持状态: {support_7z}")
+# 尝试导入rar解压库，如果没有则不支持RAR
+try:
+    import rarfile
+    support_rar = True
+except ImportError:
+    support_rar = False
+print(f"rar支持状态: {support_rar}")
 
 def browse_zip_file(zip_path_var, unzip_folder_var):
     """选择压缩文件"""
@@ -16,6 +25,8 @@ def browse_zip_file(zip_path_var, unzip_folder_var):
     file_types = [("压缩文件", "*.zip")]
     if support_7z:
         file_types.append(("7Z压缩文件", "*.7z"))
+    if support_rar:
+        file_types.append(("RAR压缩文件", "*.rar"))
     
     file_path = filedialog.askopenfilename(
         title="选择压缩文件",
@@ -50,6 +61,8 @@ def perform_unzip(zip_path, unzip_path, progress_callback, root):
             unzip_zip(zip_path, unzip_path, progress_callback, root)
         elif zip_path.lower().endswith('.7z') and support_7z:
             unzip_7z(zip_path, unzip_path, progress_callback, root)
+        elif zip_path.lower().endswith('.rar') and support_rar:
+            unzip_rar(zip_path, unzip_path, progress_callback, root)
         else:
             raise Exception("不支持的文件格式")
         
@@ -90,6 +103,20 @@ def unzip_7z(zip_path, unzip_path, progress_callback, root):
         # 7z库解压
         z.extractall(unzip_path)
 
+def unzip_rar(zip_path, unzip_path, progress_callback, root):
+    """解压RAR文件"""
+    with rarfile.RarFile(zip_path, 'r') as rar_ref:
+        file_list = rar_ref.namelist()
+        total_files = len(file_list)
+        
+        for i, file in enumerate(file_list):
+            # 更新进度
+            progress = (i + 1) / total_files * 100
+            update_progress(root, progress_callback, progress, f"正在解压: {os.path.basename(file)}")
+            
+            # 解压文件
+            rar_ref.extract(file, unzip_path)
+
 def start_unzip(zip_path, unzip_path, progress_callback, root):
     """开始解压（启动后台线程）"""
     # 验证输入
@@ -103,7 +130,8 @@ def start_unzip(zip_path, unzip_path, progress_callback, root):
     
     # 检查文件格式
     if not (zip_path.lower().endswith('.zip') or 
-            (zip_path.lower().endswith('.7z') and support_7z)):
+            (zip_path.lower().endswith('.7z') and support_7z) or
+            (zip_path.lower().endswith('.rar') and support_rar)):
         messagebox.showwarning("警告", "不支持的文件格式")
         return
     
